@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Login — PastVault</title>
+<link rel="stylesheet" href="admin-login.css">
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-stamp">ADMIN</div>
+
+    <div class="brand-row">
+      <span class="brand-icon">
+        <svg width="30" height="30" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="30" height="30" rx="9" fill="#0D9488"/>
+          <circle cx="16" cy="16" r="7.5" fill="none" stroke="#FFFBF5" stroke-width="2.2"/>
+          <circle cx="16" cy="16" r="2.4" fill="#F97316"/>
+          <rect x="15" y="7.3" width="2" height="3.4" rx="1" fill="#FFFBF5"/>
+        </svg>
+      </span>
+      <span class="brand-word">PastVault</span>
+    </div>
+
+    <h1>Admin login</h1>
+    <p class="auth-sub">For staff reviewing and managing submitted resources.</p>
+
+    <div class="auth-error" id="errorBox"></div>
+
+    <form id="adminLoginForm">
+      <div class="field">
+        <label for="username">Email</label>
+        <input type="email" id="username" required placeholder="admin@example.com">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-wrap">
+          <input type="password" id="password" required placeholder="Admin password">
+          <button type="button" class="password-toggle" data-target="password" aria-label="Show password">
+            <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-6.06M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary">Log in</button>
+    </form>
+
+    <p class="auth-switch"><a href="index.html">&larr; Back to student site</a></p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="supabase-client.js"></script>
+<script src="auth.js"></script>
+<script src="admin-auth.js"></script>
+<script src="password-toggle.js"></script>
+<script>
+  const form = document.getElementById("adminLoginForm");
+  const errorBox = document.getElementById("errorBox");
+
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    errorBox.classList.remove("show");
+
+    const email = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    let result;
+    try {
+      result = await adminLogin(email, password);
+    } catch (error) {
+      result = { ok: false, message: error.message || "Could not connect to Supabase." };
+    }
+
+    if (!result.ok) {
+      errorBox.textContent = result.message;
+      errorBox.classList.add("show");
+      return;
+    }
+
+    window.location.href = "admin.html";
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastVault-Admin</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <div class="brand-row">
+      <span class="brand-icon">
+        <svg width="26" height="26" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="30" height="30" rx="9" fill="#FFFBF5"/>
+          <circle cx="16" cy="16" r="7.5" fill="none" stroke="#0D9488" stroke-width="2.2"/>
+          <circle cx="16" cy="16" r="2.4" fill="#F97316"/>
+          <rect x="15" y="7.3" width="2" height="3.4" rx="1" fill="#0D9488"/>
+        </svg>
+      </span>
+      <span class="brand">PastVault</span>
+    </div>
+    <div class="brand-sub">ADMIN PANEL</div>
+
+    <div class="user-block">
+      <div class="user-name">School Admin</div>
+      <div class="user-id">Review &amp; moderation</div>
+    </div>
+
+    <button class="btn-logout" id="logoutBtn">Log out</button>
+  </aside>
+
+  <main class="main">
+    <h1>Review queue</h1>
+    <div class="date-today" id="todayDate"></div>
+
+    <div class="tab-nav">
+      <button class="tab-btn" data-tab="upload">Upload questions</button>
+      <button class="tab-btn active" data-tab="pending">Pending review</button>
+      <button class="tab-btn" data-tab="approved">Approved library</button>
+      <button class="tab-btn" data-tab="departments">Departments</button>
+      <button class="tab-btn" data-tab="records">Records</button>
+    </div>
+
+    <section id="tab-pending">
+      <div id="pendingList"></div>
+    </section>
+
+    <section id="tab-upload" style="display:none;">
+      <div class="entry-form upload-form">
+        <div class="upload-heading">
+          <div>
+            <h2>Publish past questions</h2>
+            <p>Choose a course and semester, then add question images. The paper heading shows its year.</p>
+          </div>
+          <span class="upload-live-badge">LIVE ON PUBLISH</span>
+        </div>
+        <div class="auth-error" id="adminUploadError" role="alert"></div>
+        <div class="upload-success" id="adminUploadSuccess" role="status"></div>
+
+        <div class="entry-form-row">
+          <div class="field">
+            <label>Department</label>
+            <div id="uploadDeptCombo"></div>
+          </div>
+          <div class="field">
+            <label>Level</label>
+            <div id="uploadLevelCombo"></div>
+          </div>
+        </div>
+        <div class="entry-form-row">
+          <div class="field">
+            <label>Semester</label>
+            <div id="uploadSemesterCombo"></div>
+          </div>
+          <div class="field">
+            <label>Course</label>
+            <div id="uploadCourseCombo"></div>
+          </div>
+        </div>
+
+        <div class="upload-picker">
+          <label for="adminImageInput" class="upload-picker-button">
+            <span aria-hidden="true">＋</span>
+            <span>Add question images</span>
+          </label>
+          <input id="adminImageInput" type="file" accept="image/*" multiple hidden>
+          <span class="upload-picker-note">Images only. File size is subject to your Supabase Storage bucket limit.</span>
+        </div>
+
+        <div id="adminImageList" class="admin-image-list"></div>
+        <div class="upload-submit-row">
+          <span id="adminUploadCount" class="upload-count">No images selected</span>
+          <button type="button" class="btn-add" id="publishAdminImagesBtn" disabled>Publish questions</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-approved" style="display:none;">
+      <div id="approvedList"></div>
+    </section>
+
+    <section id="tab-departments" style="display:none;">
+      <div class="entry-form">
+        <h2>Create a new department</h2>
+        <div class="auth-error" id="deptErrorBox"></div>
+        <form id="createDeptForm">
+          <div class="entry-form-row">
+            <div class="field" style="flex:2;">
+              <label for="newDeptName">Department name</label>
+              <input type="text" id="newDeptName" required placeholder="e.g. Computer Science">
+            </div>
+          </div>
+          <button type="submit" class="btn-add">Create department</button>
+        </form>
+      </div>
+
+      <h2 style="font-size:16px; margin-bottom:14px;">Manage courses</h2>
+      <div class="entry-form">
+        <div class="entry-form-row">
+          <div class="field">
+            <label>Department</label>
+            <div id="mgmtDeptCombo"></div>
+          </div>
+          <div class="field">
+            <label>Level</label>
+            <div id="mgmtLevelCombo"></div>
+          </div>
+          <div class="field">
+            <label>Semester</label>
+            <div id="mgmtSemesterCombo"></div>
+          </div>
+        </div>
+        <div class="entry-form-row">
+          <div class="field">
+            <label for="mgmtCourseCode">Course code</label>
+            <input type="text" id="mgmtCourseCode" placeholder="e.g. CSC 201">
+          </div>
+          <div class="field">
+            <label for="mgmtCourseTitle">Course title</label>
+            <input type="text" id="mgmtCourseTitle" placeholder="e.g. Computer Programming I">
+          </div>
+        </div>
+        <button type="button" class="btn-add" id="addCourseBtn">Add course</button>
+        <div id="courseListArea" style="margin-top:20px;"></div>
+      </div>
+    </section>
+
+    <section id="tab-records" style="display:none;">
+      <div class="entry-form" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+        <span style="font-weight:600; font-size:14px; margin-right:auto;">Download everything for backup or review:</span>
+        <button class="btn-add" onclick="downloadAllDataJSON()">Download all data (JSON)</button>
+        <button class="btn-add" style="background:#0D9488;" onclick="downloadStudentsCSV()">Students (CSV)</button>
+        <button class="btn-add" style="background:#0D9488;" onclick="downloadResourcesCSV()">Uploads (CSV)</button>
+      </div>
+
+      <h2 style="font-size:16px; margin:0 0 12px;">Registered students <span id="studentCount" class="mono" style="font-weight:400; color:#71808F;"></span></h2>
+      <div class="records-table-wrap" id="studentsTable"></div>
+
+      <h2 style="font-size:16px; margin:28px 0 12px;">All uploads <span id="uploadCount" class="mono" style="font-weight:400; color:#71808F;"></span></h2>
+      <div class="records-table-wrap" id="resourcesTable"></div>
+
+      <h2 style="font-size:16px; margin:28px 0 12px;">Departments</h2>
+      <div class="records-table-wrap" id="deptTable"></div>
+
+      <h2 style="font-size:16px; margin:36px 0 12px; color:#B23A29;">⚠ Danger zone</h2>
+      <div class="entry-form" style="border-color:#F3C2B6;">
+        <p style="font-size:13px; color:#71808F; margin-top:0;">
+          Deleting uploads also removes their stored files. Manage student Auth accounts
+          in Supabase Authentication; do not delete profile rows by themselves.
+        </p>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn-reject" onclick="handleClearOne('resources')">Delete all uploads</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="supabase-client.js"></script>
+<script src="auth.js"></script>
+<script src="admin-auth.js"></script>
+<script src="departments.js"></script>
+<script src="resources.js"></script>
+<script src="question-preview.js"></script>
+<script src="combo.js"></script>
+<script>
+  let adminUser = null;
+  requireAdminAuth().then(admin => {
+    adminUser = admin;
+    if (admin) renderPending().catch(showPageError);
+  }).catch(showPageError);
+
+  document.getElementById("todayDate").textContent =
+    new Date().toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => adminLogout().catch(showPageError));
+
+  const mgmtDeptCombo = new SearchableSelect(document.getElementById("mgmtDeptCombo"), {
+    placeholder: "Select department",
+    onChange: () => renderCourseList().catch(showPageError)
+  });
+  const mgmtLevelCombo = new SearchableSelect(document.getElementById("mgmtLevelCombo"), {
+    placeholder: "Select level",
+    onChange: () => renderCourseList().catch(showPageError)
+  });
+  const mgmtSemesterCombo = new SearchableSelect(document.getElementById("mgmtSemesterCombo"), {
+    placeholder: "Select semester",
+    onChange: () => renderCourseList().catch(showPageError)
+  });
+  mgmtLevelCombo.setOptions(LEVELS.map(l => ({ value: l, label: l + " Level" })));
+  mgmtSemesterCombo.setOptions(SEMESTERS.map(s => ({ value: s, label: s })));
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      ["upload", "pending", "approved", "departments", "records"].forEach(t => {
+        document.getElementById("tab-" + t).style.display = (t === btn.dataset.tab) ? "block" : "none";
+      });
+      if (btn.dataset.tab === "upload") populateUploadDeptSelect().catch(showPageError);
+      if (btn.dataset.tab === "approved") renderApproved().catch(showPageError);
+      if (btn.dataset.tab === "departments") {
+        populateMgmtDeptSelect().then(renderCourseList).catch(showPageError);
+      }
+      if (btn.dataset.tab === "records") renderRecords().catch(showPageError);
+    });
+  });
+
+  const uploadDeptCombo = new SearchableSelect(document.getElementById("uploadDeptCombo"), {
+    placeholder: "Select department",
+    onChange: resetUploadCourseOptions
+  });
+  const uploadLevelCombo = new SearchableSelect(document.getElementById("uploadLevelCombo"), {
+    placeholder: "Select level",
+    onChange: resetUploadCourseOptions
+  });
+  const uploadSemesterCombo = new SearchableSelect(document.getElementById("uploadSemesterCombo"), {
+    placeholder: "Select semester",
+    onChange: () => populateUploadCourseSelect().catch(showPageError)
+  });
+  const uploadCourseCombo = new SearchableSelect(document.getElementById("uploadCourseCombo"), {
+    placeholder: "Select course"
+  });
+  uploadLevelCombo.setOptions(LEVELS.map(level => ({ value: level, label: level + " Level" })));
+  uploadSemesterCombo.setOptions(SEMESTERS.map(semester => ({ value: semester, label: semester })));
+  uploadCourseCombo.disable("Select department, level, and semester first");
+
+  let adminImageFiles = [];
+  const adminImageInput = document.getElementById("adminImageInput");
+  const adminImageList = document.getElementById("adminImageList");
+  const adminUploadError = document.getElementById("adminUploadError");
+  const adminUploadSuccess = document.getElementById("adminUploadSuccess");
+
+  adminImageInput.addEventListener("change", async () => {
+    adminUploadError.classList.remove("show");
+    adminUploadSuccess.classList.remove("show");
+    const selectedFiles = Array.from(adminImageInput.files || []);
+    adminImageInput.value = "";
+    if (!selectedFiles.length) return;
+
+    if (selectedFiles.some(file => !file.type.startsWith("image/"))) {
+      adminUploadError.textContent = "Only image files are supported.";
+      adminUploadError.classList.add("show");
+      return;
+    }
+    try {
+      adminImageFiles.push(...selectedFiles.map(file => ({
+        file,
+        previewUrl: URL.createObjectURL(file)
+      })));
+      renderAdminImageList();
+    } catch (error) {
+      adminUploadError.textContent = error.message;
+      adminUploadError.classList.add("show");
+    }
+  });
+
+  adminImageList.addEventListener("click", event => {
+    const removeButton = event.target.closest("[data-remove-image]");
+    if (!removeButton) return;
+    const [removedImage] = adminImageFiles.splice(Number(removeButton.dataset.removeImage), 1);
+    URL.revokeObjectURL(removedImage.previewUrl);
+    renderAdminImageList();
+  });
+
+  document.getElementById("publishAdminImagesBtn").addEventListener("click", async () => {
+    adminUploadError.classList.remove("show");
+    adminUploadSuccess.classList.remove("show");
+    const departmentId = uploadDeptCombo.getValue();
+    const level = uploadLevelCombo.getValue();
+    const semester = uploadSemesterCombo.getValue();
+    const courseCode = uploadCourseCombo.getValue();
+    if (!departmentId || !level || !semester || !courseCode) {
+      showAdminUploadError("Select a department, level, semester, and course first.");
+      return;
+    }
+    if (!adminImageFiles.length) {
+      showAdminUploadError("Add at least one question image to publish.");
+      return;
+    }
+
+    const entries = adminImageFiles.map(item => ({
+      department: departmentId,
+      courseCode,
+      level,
+      semester,
+      resourceType: "Past Question",
+      file: item.file
+    }));
+    let result;
+    try {
+      result = await publishAdminResources(entries);
+    } catch (error) {
+      showAdminUploadError(error.message || "Could not publish these questions.");
+      return;
+    }
+    if (!result.ok) {
+      showAdminUploadError(result.message);
+      return;
+    }
+
+    adminImageFiles.forEach(item => URL.revokeObjectURL(item.previewUrl));
+    adminImageFiles = [];
+    renderAdminImageList();
+    adminUploadSuccess.textContent = `${result.count} past question${result.count === 1 ? "" : "s"} published to the approved library.`;
+    adminUploadSuccess.classList.add("show");
+  });
+
+  async function populateUploadDeptSelect() {
+    const departments = await getDepartments();
+    uploadDeptCombo.setOptions(departments.map(department => ({ value: department.id, label: department.name })));
+    resetUploadCourseOptions();
+  }
+
+  function resetUploadCourseOptions() {
+    uploadSemesterCombo.reset();
+    uploadCourseCombo.setOptions([]);
+    uploadCourseCombo.disable("Select department, level, and semester first");
+  }
+
+  async function populateUploadCourseSelect() {
+    const departmentId = uploadDeptCombo.getValue();
+    const level = uploadLevelCombo.getValue();
+    const semester = uploadSemesterCombo.getValue();
+    const courses = departmentId && level && semester ? await getCoursesFor(departmentId, level, semester) : [];
+    uploadCourseCombo.setOptions(courses.map(course => ({
+      value: course.code,
+      label: `${course.code} — ${course.title}`
+    })));
+    if (!courses.length) uploadCourseCombo.disable("No courses for this selection");
+    else uploadCourseCombo.enable();
+  }
+
+  function renderAdminImageList() {
+    const publishButton = document.getElementById("publishAdminImagesBtn");
+    document.getElementById("adminUploadCount").textContent = adminImageFiles.length
+      ? `${adminImageFiles.length} image${adminImageFiles.length === 1 ? "" : "s"} ready`
+      : "No images selected";
+    publishButton.disabled = adminImageFiles.length === 0;
+    adminImageList.innerHTML = adminImageFiles.map((item, index) => `
+      <article class="admin-image-item">
+        <img src="${item.previewUrl}" alt="Preview of ${escapeHtml(item.file.name)}">
+        <div class="admin-image-details">
+          <strong title="${escapeHtml(item.file.name)}">${escapeHtml(item.file.name)}</strong>
+          <span>Ready to publish</span>
+        </div>
+        <button type="button" class="image-remove" data-remove-image="${index}" aria-label="Remove ${escapeHtml(item.file.name)}" title="Remove image">&times;</button>
+      </article>
+    `).join("");
+  }
+
+  function showAdminUploadError(message) {
+    adminUploadError.textContent = message;
+    adminUploadError.classList.add("show");
+  }
+
+  async function renderPending() {
+    const items = await getPendingResources();
+    const listEl = document.getElementById("pendingList");
+
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="feed-empty">No pending submissions — you're all caught up.</div>`;
+      return;
+    }
+
+    const rejectionCounts = await Promise.all(items.map(resource => getRejectionCount(resource.userEmail)));
+    listEl.innerHTML = `<div class="question-grid admin-question-grid">${items.map((r, index) => {
+      const priorRejections = rejectionCounts[index];
+      return `
+      <div class="feed-card">
+        <div class="feed-card-head">
+          <div>
+            <div class="feed-card-title">${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</div>
+            <div class="feed-card-meta">
+              Submitted by ${escapeHtml(r.authorName)} (${escapeHtml(r.regNumber)}) · ${escapeHtml(r.departmentName || "")} · ${escapeHtml(r.level)} Level · ${escapeHtml(r.semester)} · ${timeAgo(r.createdAt)}
+              ${priorRejections > 0 ? `<span class="flag-note">⚠ ${priorRejections} prior rejection${priorRejections > 1 ? "s" : ""}</span>` : ""}
+            </div>
+          </div>
+          <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
+        </div>
+        ${resourcePreviewMarkup(r)}
+        ${r.description ? `<div class="feed-card-body">${escapeHtml(r.description)}</div>` : ""}
+        <div class="feed-card-footer">
+          <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">View ${escapeHtml(r.fileName)}</a>
+        </div>
+        <div class="reject-row">
+          <button class="btn-approve" onclick="handleApprove('${r.id}')">Approve</button>
+          <input type="text" id="reason-${r.id}" placeholder="Reason if rejecting (e.g. wrong course, unreadable, fake)">
+          <button class="btn-reject" onclick="handleReject('${r.id}')">Reject</button>
+        </div>
+      </div>
+    `;
+    }).join("")}</div>`;
+  }
+
+  async function renderApproved() {
+    const items = await getApprovedResources();
+    const listEl = document.getElementById("approvedList");
+
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="feed-empty">No approved resources yet.</div>`;
+      return;
+    }
+
+    listEl.innerHTML = `<div class="question-grid admin-question-grid">${items.map(r => `
+      <div class="feed-card">
+        <div class="feed-card-head">
+          <div>
+            <div class="feed-card-title">${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</div>
+            <div class="feed-card-meta">By ${escapeHtml(r.authorName)} · ${escapeHtml(r.departmentName || "")} · ${escapeHtml(r.level)} Level · ${escapeHtml(r.semester)} · approved ${timeAgo(r.reviewedAt)}</div>
+          </div>
+          <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
+        </div>
+          ${resourcePreviewMarkup(r)}
+        <div class="feed-card-footer">
+          <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>
+        </div>
+      </div>
+    `).join("")}</div>`;
+  }
+
+  function resourcePreviewMarkup(resource) {
+    if (!resource.fileDataUrl || !resource.contentType || !resource.contentType.startsWith("image/")) return "";
+    const previewLabel = `Open full ${escapeHtml(resource.courseCode)} question`;
+    return `
+      <button type="button" class="question-preview question-preview-trigger" data-preview-src="${resource.fileDataUrl}" data-preview-alt="${previewLabel}" aria-label="${previewLabel}" title="Click to view the full question">
+        <img src="${resource.fileDataUrl}" alt="" loading="lazy">
+        <span class="question-preview-label">Paper heading · Click to view full question</span>
+      </button>
+    `;
+  }
+
+  async function handleApprove(id) {
+    try {
+      await approveResource(id);
+      await renderPending();
+    } catch (error) {
+      alert(error.message || "Could not approve this question.");
+    }
+  }
+
+  async function handleReject(id) {
+    const reasonInput = document.getElementById("reason-" + id);
+    const reason = reasonInput.value.trim() || "Not specified";
+    try {
+      await rejectResource(id, reason);
+      await renderPending();
+    } catch (error) {
+      alert(error.message || "Could not reject this question.");
+    }
+  }
+
+  /* ---------- department + course management ---------- */
+
+  document.getElementById("createDeptForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const errorBox = document.getElementById("deptErrorBox");
+    errorBox.classList.remove("show");
+
+    const name = document.getElementById("newDeptName").value.trim();
+    let result;
+    try {
+      result = await createDepartment(name);
+    } catch (error) {
+      errorBox.textContent = error.message || "Could not create the department.";
+      errorBox.classList.add("show");
+      return;
+    }
+
+    if (!result.ok) {
+      errorBox.textContent = result.message;
+      errorBox.classList.add("show");
+      return;
+    }
+
+    document.getElementById("createDeptForm").reset();
+    try {
+      await populateMgmtDeptSelect();
+      await renderCourseList();
+    } catch (error) {
+      showPageError(error);
+    }
+  });
+
+  async function populateMgmtDeptSelect() {
+    const departments = await getDepartments();
+    mgmtDeptCombo.setOptions(departments.map(d => ({ value: d.id, label: d.name })));
+  }
+
+  document.getElementById("addCourseBtn").addEventListener("click", async () => {
+    const deptId = mgmtDeptCombo.getValue();
+    const level = mgmtLevelCombo.getValue();
+    const semester = mgmtSemesterCombo.getValue();
+    const code = document.getElementById("mgmtCourseCode").value.trim();
+    const title = document.getElementById("mgmtCourseTitle").value.trim();
+
+    if (!deptId) { alert("Create a department first."); return; }
+    if (!level || !semester) { alert("Select a level and semester."); return; }
+    if (!code || !title) { alert("Enter both a course code and title."); return; }
+
+    let result;
+    try {
+      result = await addCourseToDepartment(deptId, level, semester, code, title);
+    } catch (error) {
+      alert(error.message || "Could not add this course.");
+      return;
+    }
+    if (!result.ok) { alert(result.message); return; }
+
+    document.getElementById("mgmtCourseCode").value = "";
+    document.getElementById("mgmtCourseTitle").value = "";
+    try {
+      await renderCourseList();
+    } catch (error) {
+      showPageError(error);
+    }
+  });
+
+  async function renderCourseList() {
+    const area = document.getElementById("courseListArea");
+    const deptId = mgmtDeptCombo.getValue();
+    const level = mgmtLevelCombo.getValue();
+    const semester = mgmtSemesterCombo.getValue();
+
+    if (!deptId || !level || !semester) {
+      area.innerHTML = `<div class="feed-empty">Select a department, level, and semester to manage courses.</div>`;
+      return;
+    }
+
+    const courses = await getCoursesFor(deptId, level, semester);
+    if (courses.length === 0) {
+      area.innerHTML = `<div class="feed-empty">No courses added yet for this level/semester.</div>`;
+      return;
+    }
+
+    area.innerHTML = courses.map(c => `
+      <div class="feed-card" style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px;">
+        <span><strong>${escapeHtml(c.code)}</strong> — ${escapeHtml(c.title)}</span>
+        <button class="btn-reject" onclick="handleRemoveCourse('${deptId}','${level}','${semester.replace(/'/g, "\\'")}','${c.code.replace(/'/g, "\\'")}')">Remove</button>
+      </div>
+    `).join("");
+  }
+
+  async function handleRemoveCourse(deptId, level, semester, code) {
+    try {
+      await removeCourseFromDepartment(deptId, level, semester, code);
+      await renderCourseList();
+    } catch (error) {
+      alert(error.message || "Could not remove this course.");
+    }
+  }
+
+  /* ---------- Records tab: readable tables + downloads ---------- */
+
+  async function renderRecords() {
+    const [students, resources, departments] = await Promise.all([
+      getUsers(),
+      getAllResources(),
+      getDepartments()
+    ]);
+
+    document.getElementById("studentCount").textContent = `(${students.length})`;
+    document.getElementById("uploadCount").textContent = `(${resources.length})`;
+
+    // students table
+    const studentsEl = document.getElementById("studentsTable");
+    studentsEl.innerHTML = students.length === 0
+      ? `<div class="feed-empty">No students registered yet.</div>`
+      : `<table class="records-table">
+          <thead><tr><th>Name</th><th>Matric No.</th><th>Email</th><th>Department</th></tr></thead>
+          <tbody>${students.map(s => `
+            <tr>
+              <td>${escapeHtml(s.fullName)}</td>
+              <td class="mono">${escapeHtml(s.regNumber)}</td>
+              <td>${escapeHtml(s.email)}</td>
+              <td>${escapeHtml(s.departmentName || "—")}</td>
+            </tr>
+          `).join("")}</tbody>
+        </table>`;
+
+    // resources/uploads table
+    const resourcesEl = document.getElementById("resourcesTable");
+    resourcesEl.innerHTML = resources.length === 0
+      ? `<div class="feed-empty">No uploads yet.</div>`
+      : `<table class="records-table">
+          <thead><tr><th>Course</th><th>Type</th><th>Uploaded by</th><th>Department</th><th>Level</th><th>Status</th><th>Date</th></tr></thead>
+          <tbody>${resources.map(r => `
+            <tr>
+              <td>${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</td>
+              <td>${escapeHtml(r.resourceType)}</td>
+              <td>${escapeHtml(r.authorName)}</td>
+              <td>${escapeHtml(r.departmentName || "—")}</td>
+              <td>${escapeHtml(r.level)}L / ${escapeHtml(r.semester)}</td>
+              <td><span class="badge" style="${statusStyle(r.status)}">${r.status.toUpperCase()}</span></td>
+              <td class="mono">${new Date(r.createdAt).toLocaleDateString("en-GB")}</td>
+            </tr>
+          `).join("")}</tbody>
+        </table>`;
+
+    // departments table
+    const deptEl = document.getElementById("deptTable");
+    deptEl.innerHTML = departments.length === 0
+      ? `<div class="feed-empty">No departments created yet.</div>`
+      : `<table class="records-table">
+          <thead><tr><th>Department</th><th>Total courses</th></tr></thead>
+          <tbody>${departments.map(d => {
+            let courseCount = 0;
+            LEVELS.forEach(l => SEMESTERS.forEach(s => courseCount += (d.courses[l][s] || []).length));
+            return `<tr><td>${escapeHtml(d.name)}</td><td>${courseCount}</td></tr>`;
+          }).join("")}</tbody>
+        </table>`;
+  }
+
+  function statusStyle(status) {
+    if (status === "approved") return "background:#E1F5EA; color:#178A44;";
+    if (status === "rejected") return "background:#FDEAE6; color:#B23A29;";
+    return "background:#FDF3E2; color:#946200;";
+  }
+
+  async function downloadAllDataJSON() {
+    const data = {
+      students: await getUsers(),
+      resources: await getAllResources(),
+      departments: await getDepartments(),
+      exportedAt: new Date().toISOString()
+    };
+    triggerDownload(JSON.stringify(data, null, 2), "pastvault-all-data.json", "application/json");
+  }
+
+  function toCSVValue(val) {
+    const str = String(val ?? "");
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+
+  async function downloadStudentsCSV() {
+    const students = await getUsers();
+    const rows = [["Full Name", "Matric Number", "Email", "Department"]];
+    students.forEach(s => rows.push([s.fullName, s.regNumber, s.email, s.departmentName || ""]));
+    const csv = rows.map(row => row.map(toCSVValue).join(",")).join("\n");
+    triggerDownload(csv, "pastvault-students.csv", "text/csv");
+  }
+
+  async function downloadResourcesCSV() {
+    const resources = await getAllResources();
+    const rows = [["Course Code", "Course Title", "Type", "Uploaded By", "Reg Number", "Department", "Level", "Semester", "Status", "Date"]];
+    resources.forEach(r => rows.push([
+      r.courseCode, r.courseTitle, r.resourceType, r.authorName, r.regNumber,
+      r.departmentName || "", r.level, r.semester, r.status, new Date(r.createdAt).toLocaleDateString("en-GB")
+    ]));
+    const csv = rows.map(row => row.map(toCSVValue).join(",")).join("\n");
+    triggerDownload(csv, "pastvault-uploads.csv", "text/csv");
+  }
+
+  function triggerDownload(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /* ---------- danger zone: deleting data ---------- */
+
+  async function handleClearOne() {
+    try {
+      const resources = await getAllResources();
+      if (!resources.length) {
+        alert("There are no uploads to delete.");
+        return;
+      }
+      if (!confirm(`Delete all ${resources.length} uploads and their stored files? This cannot be undone.`)) return;
+      await deleteAllResources();
+      await Promise.all([renderRecords(), renderPending(), renderApproved()]);
+    } catch (error) {
+      alert(error.message || "Could not delete the uploads.");
+    }
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PastVault-Dashboard</title>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <aside class="sidebar">
+    <div class="brand-row">
+      <span class="brand-icon">
+        <svg width="26" height="26" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="30" height="30" rx="9" fill="#FFFBF5"/>
+          <circle cx="16" cy="16" r="7.5" fill="none" stroke="#0D9488" stroke-width="2.2"/>
+          <circle cx="16" cy="16" r="2.4" fill="#F97316"/>
+          <rect x="15" y="7.3" width="2" height="3.4" rx="1" fill="#0D9488"/>
+        </svg>
+      </span>
+      <span class="brand">PastVault</span>
+    </div>
+    <div class="brand-sub" id="deptLabel">DEPARTMENT</div>
+
+    <div class="user-block">
+      <div class="user-name" id="userName">—</div>
+      <div class="user-id" id="userRegNumber">—</div>
+    </div>
+
+    <button class="btn-logout" id="logoutBtn">Log out</button>
+  </aside>
+
+  <main class="main">
+    <h1>Welcome<span id="firstNameSpan"></span></h1>
+    <div class="date-today" id="todayDate"></div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="browse">Browse resources</button>
+      <button class="tab-btn" data-tab="upload">Upload a past question</button>
+      <button class="tab-btn" data-tab="mine">My submissions</button>
+    </div>
+
+    <!-- BROWSE -->
+    <section id="tab-browse">
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div id="browseArea"></div>
+    </section>
+
+    <!-- UPLOAD -->
+    <section id="tab-upload" style="display:none;">
+      <div class="entry-form">
+        <h2>Submit a resource</h2>
+        <p style="font-size:13px; color:#6B7280; margin-top:-6px; margin-bottom:18px;">
+          Your upload will be reviewed by the department admin before it appears for other students.
+        </p>
+
+        <div class="auth-error" id="errorBox"></div>
+
+        <form id="uploadForm">
+          <div class="entry-form-row">
+            <div class="field">
+              <label>Level</label>
+              <div id="uploadLevelCombo"></div>
+            </div>
+            <div class="field">
+              <label>Semester</label>
+              <div id="uploadSemesterCombo"></div>
+            </div>
+          </div>
+
+          <div class="entry-form-row">
+            <div class="field">
+              <label>Course</label>
+              <div id="uploadCourseCombo"></div>
+            </div>
+            <div class="field">
+              <label>Type</label>
+              <div id="resourceTypeCombo"></div>
+            </div>
+          </div>
+
+          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Notes for reviewers (optional)</label>
+          <textarea id="description" placeholder="Optional details about the file for the reviewer"></textarea>
+
+          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">File</label>
+          <div class="file-drop" id="fileDrop">
+            <span id="fileDropLabel">Click to attach a PDF or image</span>
+            <input type="file" id="fileInput" accept=".pdf,.doc,.docx,image/*" required>
+          </div>
+          <p class="file-hint">File size is subject to your Supabase Storage bucket limit.</p>
+
+          <button type="submit" class="btn-add">Submit for review</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- MINE -->
+    <section id="tab-mine" style="display:none;">
+      <div id="mineList"></div>
+    </section>
+  </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="supabase-client.js"></script>
+<script src="auth.js"></script>
+<script src="departments.js"></script>
+<script src="resources.js"></script>
+<script src="question-preview.js"></script>
+<script src="combo.js"></script>
+<script>
+  let user = null;
+
+  // browse state: which folder level we're currently viewing
+  // view: "levels" | "semesters" | "courses" | "files"
+  let browseState = { view: "levels", level: null, semester: null, course: null };
+
+  const levelCombo = new SearchableSelect(document.getElementById("uploadLevelCombo"), {
+    placeholder: "Select level",
+    onChange: () => refreshUploadCourseOptions().catch(showPageError)
+  });
+  const semesterCombo = new SearchableSelect(document.getElementById("uploadSemesterCombo"), {
+    placeholder: "Select semester",
+    onChange: () => refreshUploadCourseOptions().catch(showPageError)
+  });
+  const courseCombo = new SearchableSelect(document.getElementById("uploadCourseCombo"), {
+    placeholder: "Select level and semester first"
+  });
+  courseCombo.disable("Select level and semester first");
+  const typeCombo = new SearchableSelect(document.getElementById("resourceTypeCombo"), {
+    placeholder: "Select type"
+  });
+
+  async function initializeDashboard() {
+    user = await requireAuth();
+    if (!user) return;
+
+    document.getElementById("userName").textContent = user.fullName;
+    document.getElementById("userRegNumber").textContent = user.regNumber;
+    document.getElementById("firstNameSpan").textContent = ", " + user.fullName.split(" ")[0];
+    document.getElementById("deptLabel").textContent = (user.departmentName || "DEPARTMENT").toUpperCase();
+    document.getElementById("todayDate").textContent =
+      new Date().toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+
+    levelCombo.setOptions(LEVELS.map(l => ({ value: l, label: l + " Level" })));
+    semesterCombo.setOptions(SEMESTERS.map(s => ({ value: s, label: s })));
+    typeCombo.setOptions([
+      { value: "Past Question", label: "Past Question" },
+      { value: "Notes", label: "Notes" },
+      { value: "Assignment", label: "Assignment" },
+      { value: "Other", label: "Other" }
+    ]);
+    typeCombo.select("Past Question", "Past Question");
+
+    await renderBrowse();
+    await renderMine();
+  }
+  initializeDashboard().catch(showPageError);
+
+  document.getElementById("logoutBtn").addEventListener("click", () => logout().catch(showPageError));
+
+  // tabs
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      ["browse", "upload", "mine"].forEach(t => {
+        document.getElementById("tab-" + t).style.display = (t === btn.dataset.tab) ? "block" : "none";
+      });
+      if (btn.dataset.tab === "mine") renderMine().catch(showPageError);
+    });
+  });
+
+  /* ---------- upload form: cascading level -> semester -> course ---------- */
+
+  async function refreshUploadCourseOptions() {
+    const level = levelCombo.getValue();
+    const semester = semesterCombo.getValue();
+
+    if (!level || !semester) {
+      courseCombo.setOptions([]);
+      courseCombo.disable("Select level and semester first");
+      return;
+    }
+
+    courseCombo.enable();
+    const courses = await getCoursesFor(user.department, level, semester);
+    courseCombo.setOptions(courses.map(c => ({ value: c.code, label: `${c.code} — ${c.title}` })));
+  }
+
+  // file picker UI
+  const fileDrop = document.getElementById("fileDrop");
+  const fileInput = document.getElementById("fileInput");
+  fileDrop.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) {
+      document.getElementById("fileDropLabel").textContent = "✓ " + fileInput.files[0].name;
+      fileDrop.classList.add("has-file");
+    }
+  });
+
+  document.getElementById("uploadForm").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const errorBox = document.getElementById("errorBox");
+    errorBox.classList.remove("show");
+
+    const level = levelCombo.getValue();
+    const semester = semesterCombo.getValue();
+    const courseCode = courseCombo.getValue();
+    if (!level || !semester || !courseCode) {
+      showError(errorBox, "Please select level, semester, and course.");
+      return;
+    }
+    const file = fileInput.files[0];
+    if (!file) { showError(errorBox, "Please attach a file."); return; }
+
+    try {
+      await submitResource({
+        department: user.department,
+        resourceType: typeCombo.getValue(),
+        level, semester, courseCode,
+        description: document.getElementById("description").value.trim(),
+        file
+      });
+    } catch (err) {
+      showError(errorBox, err.message || "Could not submit your question.");
+      return;
+    }
+
+    document.getElementById("uploadForm").reset();
+    document.getElementById("fileDropLabel").textContent = "Click to attach a PDF or image";
+    fileDrop.classList.remove("has-file");
+    levelCombo.reset();
+    semesterCombo.reset();
+    courseCombo.disable("Select level and semester first");
+    typeCombo.select("Past Question", "Past Question");
+
+    try {
+      await renderMine();
+    } catch (error) {
+      showError(errorBox, error.message || "The question was uploaded, but your submissions could not be refreshed.");
+    }
+    // send them to "My submissions" so they see the pending status
+    document.querySelector('.tab-btn[data-tab="mine"]').click();
+  });
+
+  /* ---------- folder-based browsing: Level -> Semester -> Course -> Files ---------- */
+
+  async function renderBrowse() {
+    renderBreadcrumb();
+    const area = document.getElementById("browseArea");
+
+    if (browseState.view === "levels") {
+      const counts = await Promise.all(LEVELS.map(level => getApprovedCountForLevel(user.department, level)));
+      area.innerHTML = `<div class="folder-grid">` + LEVELS.map((lvl, index) => `
+        <div class="folder-card" onclick="openLevel('${lvl}')">
+          <div class="folder-icon">📁</div>
+          <div class="folder-name">${lvl} Level</div>
+          <div class="folder-count">${counts[index]} file${counts[index] === 1 ? "" : "s"}</div>
+        </div>
+      `).join("") + `</div>`;
+      return;
+    }
+
+    if (browseState.view === "semesters") {
+      area.innerHTML = `<div class="folder-grid">` + SEMESTERS.map(sem => `
+        <div class="folder-card" onclick="openSemester('${sem}')">
+          <div class="folder-icon">📂</div>
+          <div class="folder-name">${sem}</div>
+        </div>
+      `).join("") + `</div>`;
+      return;
+    }
+
+    if (browseState.view === "courses") {
+      const courses = await getCoursesFor(user.department, browseState.level, browseState.semester);
+      if (courses.length === 0) {
+        area.innerHTML = `<div class="feed-empty">No courses configured for this level/semester yet.</div>`;
+        return;
+      }
+      const counts = await Promise.all(courses.map(course =>
+        getApprovedCountForCourse(user.department, browseState.level, browseState.semester, course.code)
+      ));
+      area.innerHTML = `<div class="folder-grid">` + courses.map((c, index) => {
+        const count = counts[index];
+        return `
+        <div class="folder-card" onclick="openCourse('${c.code}')">
+          <div class="folder-icon">📘</div>
+          <div class="folder-name">${escapeHtml(c.code)}</div>
+          <div class="folder-count">${count} file${count === 1 ? "" : "s"}</div>
+        </div>
+      `;
+      }).join("") + `</div>`;
+      return;
+    }
+
+    if (browseState.view === "files") {
+      const items = await getApprovedResourcesForCourse(user.department, browseState.level, browseState.semester, browseState.course);
+      if (items.length === 0) {
+        area.innerHTML = `<div class="feed-empty">Nothing uploaded for this course yet.</div>`;
+        return;
+      }
+      area.innerHTML = `<div class="question-grid student-question-grid">${items.map(r => `
+        <div class="feed-card">
+          <div class="feed-card-head">
+            <div>
+              <div class="feed-card-title">${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</div>
+              <div class="feed-card-meta">${escapeHtml(r.semester)}</div>
+            </div>
+            <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
+          </div>
+          ${r.contentType && r.contentType.startsWith("image/") ? `
+            <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} past question" aria-label="Open full ${escapeHtml(r.courseCode)} question" title="Click to view the full question">
+              <img src="${r.fileDataUrl}" alt="" loading="lazy">
+              <span class="question-preview-label">Paper heading · Click to view full question</span>
+            </button>
+          ` : ""}
+          ${r.description ? `<div class="feed-card-body">${escapeHtml(r.description)}</div>` : ""}
+          <div class="feed-card-footer">
+            <span>Verified upload</span>
+            <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>
+          </div>
+        </div>
+      `).join("")}</div>`;
+    }
+  }
+
+  function renderBreadcrumb() {
+    const bc = document.getElementById("breadcrumb");
+    const parts = [`<button onclick="goToLevels()">${browseState.view === "levels" ? "" : ""}All levels</button>`];
+
+    if (browseState.view === "levels") {
+      bc.innerHTML = `<span class="crumb-current">All levels</span>`;
+      return;
+    }
+
+    let html = `<button onclick="goToLevels()">All levels</button>`;
+    if (browseState.level) {
+      html += `<span class="crumb-sep">/</span>`;
+      html += browseState.view === "semesters"
+        ? `<span class="crumb-current">${browseState.level} Level</span>`
+        : `<button onclick="openLevel('${browseState.level}')">${browseState.level} Level</button>`;
+    }
+    if (browseState.semester) {
+      html += `<span class="crumb-sep">/</span>`;
+      html += browseState.view === "courses"
+        ? `<span class="crumb-current">${browseState.semester}</span>`
+        : `<button onclick="openSemester('${browseState.semester}')">${browseState.semester}</button>`;
+    }
+    if (browseState.course) {
+      html += `<span class="crumb-sep">/</span>`;
+      html += `<span class="crumb-current">${escapeHtml(browseState.course)}</span>`;
+    }
+    bc.innerHTML = html;
+  }
+
+  function goToLevels() {
+    browseState = { view: "levels", level: null, semester: null, course: null };
+    renderBrowse().catch(showPageError);
+  }
+
+  function openLevel(level) {
+    browseState = { view: "semesters", level, semester: null, course: null };
+    renderBrowse().catch(showPageError);
+  }
+
+  function openSemester(semester) {
+    browseState.view = "courses";
+    browseState.semester = semester;
+    renderBrowse().catch(showPageError);
+  }
+
+  function openCourse(courseCode) {
+    browseState.view = "files";
+    browseState.course = courseCode;
+    renderBrowse().catch(showPageError);
+  }
+
+  async function renderMine() {
+    const items = await getResourcesByUser(user.email);
+    const listEl = document.getElementById("mineList");
+
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="feed-empty">You haven't submitted anything yet.</div>`;
+      return;
+    }
+
+    const statusBadge = {
+      pending: `<span class="badge" style="background:#FDF3E2; color:#946200;">PENDING REVIEW</span>`,
+      approved: `<span class="badge badge-approved" style="background:#E4F2E9; color:#3E7C59;">APPROVED</span>`,
+      rejected: `<span class="badge" style="background:#FCEBE6; color:#A03F22;">REJECTED</span>`
+    };
+
+    listEl.innerHTML = items.map(r => `
+      <div class="feed-card">
+        <div class="feed-card-head">
+          <div>
+            <div class="feed-card-title">${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</div>
+            <div class="feed-card-meta">${escapeHtml(r.level)} Level · ${escapeHtml(r.semester)} · ${escapeHtml(r.resourceType)} · ${timeAgo(r.createdAt)}</div>
+          </div>
+          ${statusBadge[r.status]}
+        </div>
+        ${r.contentType && r.contentType.startsWith("image/") ? `
+          <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} submission" aria-label="Open full ${escapeHtml(r.courseCode)} submission" title="Click to view the full question">
+            <img src="${r.fileDataUrl}" alt="" loading="lazy">
+            <span class="question-preview-label">Paper heading · Click to view full question</span>
+          </button>
+        ` : ""}
+        ${r.status === "rejected" && r.rejectionReason ? `<div class="feed-card-body" style="color:#A03F22;">Reason: ${escapeHtml(r.rejectionReason)}</div>` : ""}
+      </div>
+    `).join("");
+  }
+</script>
+
+</body>
+</html>
