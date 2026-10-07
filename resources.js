@@ -10,11 +10,20 @@ function resourceSelect() {
     "uploader:profiles!resources_uploader_id_fkey(full_name,matric_number,email,department:departments!profiles_department_id_fkey(name))";
 }
 
-async function mapResource(row) {
-  const { data, error } = await getSupabaseClient()
-    .storage.from(STORAGE_BUCKET)
-    .createSignedUrl(row.storage_path, 3600);
-  if (error) throw error;
+async function mapResource(row, includeFileLink = true) {
+  let fileDataUrl = "";
+  let fileAccessError = "";
+  if (includeFileLink) {
+    const { data, error } = await getSupabaseClient()
+      .storage.from(STORAGE_BUCKET)
+      .createSignedUrl(row.storage_path, 3600);
+    if (error) {
+      console.error(`Could not access stored question "${row.storage_path}":`, error);
+      fileAccessError = error.message || "Supabase Storage could not create a file link.";
+    } else {
+      fileDataUrl = data.signedUrl;
+    }
+  }
 
   return {
     id: row.id,
@@ -33,7 +42,8 @@ async function mapResource(row) {
     description: row.description || "",
     fileName: row.file_name,
     contentType: row.content_type || "",
-    fileDataUrl: data.signedUrl,
+    fileDataUrl,
+    fileAccessError,
     storagePath: row.storage_path,
     status: row.status,
     rejectionReason: row.rejection_reason,
@@ -42,7 +52,7 @@ async function mapResource(row) {
   };
 }
 
-async function getAllResources() {
+async function getAllResources(includeFileLinks = true) {
   const client = getSupabaseClient();
   const rows = [];
   const pageSize = 500;
@@ -56,7 +66,7 @@ async function getAllResources() {
     rows.push(...data);
     if (data.length < pageSize) break;
   }
-  return Promise.all(rows.map(mapResource));
+  return Promise.all(rows.map(row => mapResource(row, includeFileLinks)));
 }
 
 async function uploadResourceFile(file, userId) {

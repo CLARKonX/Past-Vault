@@ -203,8 +203,12 @@
     }
   });
 
+  let uploadInProgress = false;
+  const uploadSubmitButton = document.querySelector('#uploadForm button[type="submit"]');
+
   document.getElementById("uploadForm").addEventListener("submit", async function (e) {
     e.preventDefault();
+    if (uploadInProgress) return;
     const errorBox = document.getElementById("errorBox");
     errorBox.classList.remove("show");
 
@@ -218,6 +222,10 @@
     const file = fileInput.files[0];
     if (!file) { showError(errorBox, "Please attach a file."); return; }
 
+    uploadInProgress = true;
+    uploadSubmitButton.disabled = true;
+    uploadSubmitButton.textContent = "Uploading...";
+
     try {
       await submitResource({
         department: user.department,
@@ -226,26 +234,28 @@
         description: document.getElementById("description").value.trim(),
         file
       });
+
+      document.getElementById("uploadForm").reset();
+      document.getElementById("fileDropLabel").textContent = "Click to attach a PDF or image";
+      fileDrop.classList.remove("has-file");
+      levelCombo.reset();
+      semesterCombo.reset();
+      courseCombo.disable("Select level and semester first");
+      typeCombo.select("Past Question", "Past Question");
+
+      try {
+        await renderMine();
+      } catch (error) {
+        showError(errorBox, error.message || "The question was uploaded, but your submissions could not be refreshed.");
+      }
+      document.querySelector('.tab-btn[data-tab="mine"]').click();
     } catch (err) {
       showError(errorBox, err.message || "Could not submit your question.");
-      return;
+    } finally {
+      uploadInProgress = false;
+      uploadSubmitButton.disabled = false;
+      uploadSubmitButton.textContent = "Submit for review";
     }
-
-    document.getElementById("uploadForm").reset();
-    document.getElementById("fileDropLabel").textContent = "Click to attach a PDF or image";
-    fileDrop.classList.remove("has-file");
-    levelCombo.reset();
-    semesterCombo.reset();
-    courseCombo.disable("Select level and semester first");
-    typeCombo.select("Past Question", "Past Question");
-
-    try {
-      await renderMine();
-    } catch (error) {
-      showError(errorBox, error.message || "The question was uploaded, but your submissions could not be refreshed.");
-    }
-    // send them to "My submissions" so they see the pending status
-    document.querySelector('.tab-btn[data-tab="mine"]').click();
   });
 
   /* ---------- folder-based browsing: Level -> Semester -> Course -> Files ---------- */
@@ -313,16 +323,19 @@
             </div>
             <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
           </div>
-          ${r.contentType && r.contentType.startsWith("image/") ? `
+          ${r.contentType && r.contentType.startsWith("image/") && r.fileDataUrl ? `
             <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} past question" aria-label="Open full ${escapeHtml(r.courseCode)} question" title="Click to view the full question">
               <img src="${r.fileDataUrl}" alt="" loading="lazy">
               <span class="question-preview-label">Paper heading · Click to view full question</span>
             </button>
           ` : ""}
+          ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
           ${r.description ? `<div class="feed-card-body">${escapeHtml(r.description)}</div>` : ""}
           <div class="feed-card-footer">
             <span>Verified upload</span>
-            <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>
+            ${r.fileDataUrl
+              ? `<a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>`
+              : `<span>${escapeHtml(r.fileName)}</span>`}
           </div>
         </div>
       `).join("")}</div>`;
@@ -404,12 +417,13 @@
           </div>
           ${statusBadge[r.status]}
         </div>
-        ${r.contentType && r.contentType.startsWith("image/") ? `
+        ${r.contentType && r.contentType.startsWith("image/") && r.fileDataUrl ? `
           <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} submission" aria-label="Open full ${escapeHtml(r.courseCode)} submission" title="Click to view the full question">
             <img src="${r.fileDataUrl}" alt="" loading="lazy">
             <span class="question-preview-label">Paper heading · Click to view full question</span>
           </button>
         ` : ""}
+        ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
         ${r.status === "rejected" && r.rejectionReason ? `<div class="feed-card-body" style="color:#A03F22;">Reason: ${escapeHtml(r.rejectionReason)}</div>` : ""}
       </div>
     `).join("");

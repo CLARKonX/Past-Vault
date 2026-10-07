@@ -225,6 +225,7 @@
         document.getElementById("tab-" + t).style.display = (t === btn.dataset.tab) ? "block" : "none";
       });
       if (btn.dataset.tab === "upload") populateUploadDeptSelect().catch(showPageError);
+      if (btn.dataset.tab === "pending") renderPending().catch(showPageError);
       if (btn.dataset.tab === "approved") renderApproved().catch(showPageError);
       if (btn.dataset.tab === "departments") {
         populateMgmtDeptSelect().then(renderCourseList).catch(showPageError);
@@ -406,9 +407,12 @@
           <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
         </div>
         ${resourcePreviewMarkup(r)}
+        ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
         ${r.description ? `<div class="feed-card-body">${escapeHtml(r.description)}</div>` : ""}
         <div class="feed-card-footer">
-          <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">View ${escapeHtml(r.fileName)}</a>
+          ${r.fileDataUrl
+            ? `<a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">View ${escapeHtml(r.fileName)}</a>`
+            : `<span>${escapeHtml(r.fileName)}</span>`}
         </div>
         <div class="reject-row">
           <button class="btn-approve" onclick="handleApprove('${r.id}')">Approve</button>
@@ -439,8 +443,11 @@
           <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
         </div>
           ${resourcePreviewMarkup(r)}
+        ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
         <div class="feed-card-footer">
-          <a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>
+          ${r.fileDataUrl
+            ? `<a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>`
+            : `<span>${escapeHtml(r.fileName)}</span>`}
         </div>
       </div>
     `).join("")}</div>`;
@@ -580,55 +587,60 @@
   /* ---------- Records tab: readable tables + downloads ---------- */
 
   async function renderRecords() {
-    const [students, resources, departments] = await Promise.all([
-      getUsers(),
-      getAllResources(),
-      getDepartments()
-    ]);
-
-    document.getElementById("studentCount").textContent = `(${students.length})`;
-    document.getElementById("uploadCount").textContent = `(${resources.length})`;
-
-    // students table
     const studentsEl = document.getElementById("studentsTable");
-    studentsEl.innerHTML = students.length === 0
-      ? `<div class="feed-empty">No students registered yet.</div>`
-      : `<table class="records-table">
-          <thead><tr><th>Name</th><th>Matric No.</th><th>Email</th><th>Department</th></tr></thead>
-          <tbody>${students.map(s => `
-            <tr>
-              <td>${escapeHtml(s.fullName)}</td>
-              <td class="mono">${escapeHtml(s.regNumber)}</td>
-              <td>${escapeHtml(s.email)}</td>
-              <td>${escapeHtml(s.departmentName || "—")}</td>
-            </tr>
-          `).join("")}</tbody>
-        </table>`;
-
-    // resources/uploads table
     const resourcesEl = document.getElementById("resourcesTable");
-    resourcesEl.innerHTML = resources.length === 0
-      ? `<div class="feed-empty">No uploads yet.</div>`
-      : `<table class="records-table">
-          <thead><tr><th>Course</th><th>Type</th><th>Uploaded by</th><th>Department</th><th>Level</th><th>Status</th><th>Date</th></tr></thead>
-          <tbody>${resources.map(r => `
-            <tr>
-              <td>${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</td>
-              <td>${escapeHtml(r.resourceType)}</td>
-              <td>${escapeHtml(r.authorName)}</td>
-              <td>${escapeHtml(r.departmentName || "—")}</td>
-              <td>${escapeHtml(r.level)}L / ${escapeHtml(r.semester)}</td>
-              <td><span class="badge" style="${statusStyle(r.status)}">${r.status.toUpperCase()}</span></td>
-              <td class="mono">${new Date(r.createdAt).toLocaleDateString("en-GB")}</td>
-            </tr>
-          `).join("")}</tbody>
-        </table>`;
-
-    // departments table
     const deptEl = document.getElementById("deptTable");
-    deptEl.innerHTML = departments.length === 0
-      ? `<div class="feed-empty">No departments created yet.</div>`
-      : `<table class="records-table">
+
+    try {
+      const students = await getUsers();
+      document.getElementById("studentCount").textContent = `(${students.length})`;
+      studentsEl.innerHTML = students.length === 0
+        ? `<div class="feed-empty">No students registered yet.</div>`
+        : `<table class="records-table">
+            <thead><tr><th>Name</th><th>Matric No.</th><th>Email</th><th>Department</th></tr></thead>
+            <tbody>${students.map(s => `
+              <tr>
+                <td>${escapeHtml(s.fullName)}</td>
+                <td class="mono">${escapeHtml(s.regNumber)}</td>
+                <td>${escapeHtml(s.email)}</td>
+                <td>${escapeHtml(s.departmentName || "—")}</td>
+              </tr>
+            `).join("")}</tbody>
+          </table>`;
+    } catch (error) {
+      console.error("Could not load student records:", error);
+      studentsEl.innerHTML = `<div class="feed-empty">Could not load student records: ${escapeHtml(error.message)}</div>`;
+    }
+
+    try {
+      const resources = await getAllResources(false);
+      document.getElementById("uploadCount").textContent = `(${resources.length})`;
+      resourcesEl.innerHTML = resources.length === 0
+        ? `<div class="feed-empty">No uploads yet.</div>`
+        : `<table class="records-table">
+            <thead><tr><th>Course</th><th>Type</th><th>Uploaded by</th><th>Department</th><th>Level</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>${resources.map(r => `
+              <tr>
+                <td>${escapeHtml(r.courseCode)} — ${escapeHtml(r.courseTitle)}</td>
+                <td>${escapeHtml(r.resourceType)}</td>
+                <td>${escapeHtml(r.authorName)}</td>
+                <td>${escapeHtml(r.departmentName || "—")}</td>
+                <td>${escapeHtml(r.level)}L / ${escapeHtml(r.semester)}</td>
+                <td><span class="badge" style="${statusStyle(r.status)}">${r.status.toUpperCase()}</span></td>
+                <td class="mono">${new Date(r.createdAt).toLocaleDateString("en-GB")}</td>
+              </tr>
+            `).join("")}</tbody>
+          </table>`;
+    } catch (error) {
+      console.error("Could not load upload records:", error);
+      resourcesEl.innerHTML = `<div class="feed-empty">Could not load upload records: ${escapeHtml(error.message)}</div>`;
+    }
+
+    try {
+      const departments = await getDepartments();
+      deptEl.innerHTML = departments.length === 0
+        ? `<div class="feed-empty">No departments created yet.</div>`
+        : `<table class="records-table">
           <thead><tr><th>Department</th><th>Total courses</th></tr></thead>
           <tbody>${departments.map(d => {
             let courseCount = 0;
@@ -636,6 +648,10 @@
             return `<tr><td>${escapeHtml(d.name)}</td><td>${courseCount}</td></tr>`;
           }).join("")}</tbody>
         </table>`;
+    } catch (error) {
+      console.error("Could not load department records:", error);
+      deptEl.innerHTML = `<div class="feed-empty">Could not load department records: ${escapeHtml(error.message)}</div>`;
+    }
   }
 
   function statusStyle(status) {
