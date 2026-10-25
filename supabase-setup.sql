@@ -8,6 +8,9 @@ alter table public.profiles
 alter table public.resources
   add column if not exists content_type text;
 
+alter table public.resources
+  add column if not exists page_files jsonb not null default '[]'::jsonb;
+
 create unique index if not exists profiles_email_unique
   on public.profiles (lower(email))
   where email is not null;

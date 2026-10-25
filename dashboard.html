@@ -84,12 +84,13 @@
           <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Notes for reviewers (optional)</label>
           <textarea id="description" placeholder="Optional details about the file for the reviewer"></textarea>
 
-          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">File</label>
+          <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Question pages</label>
           <div class="file-drop" id="fileDrop">
-            <span id="fileDropLabel">Click to attach a PDF or image</span>
-            <input type="file" id="fileInput" accept=".pdf,.doc,.docx,image/*" required>
+            <span id="fileDropLabel">Click to attach a PDF/document or image pages</span>
+            <input type="file" id="fileInput" accept=".pdf,.doc,.docx,image/*" multiple required>
           </div>
-          <p class="file-hint">File size is subject to your Supabase Storage bucket limit.</p>
+          <p class="file-hint">Select one PDF/document or all image pages for the same question. File size is subject to your Supabase Storage bucket limit.</p>
+          <div id="uploadPageList" class="upload-page-list"></div>
 
           <button type="submit" class="btn-add">Submit for review</button>
         </form>
@@ -110,7 +111,7 @@
 <script src="auth.js"></script>
 <script src="departments.js"></script>
 <script src="resources.js"></script>
-<script src="question-preview.js"></script>
+<script src="question-preview.js?v=2"></script>
 <script src="combo.js"></script>
 <script>
   let user = null;
@@ -195,13 +196,48 @@
   // file picker UI
   const fileDrop = document.getElementById("fileDrop");
   const fileInput = document.getElementById("fileInput");
+  let selectedQuestionFiles = [];
   fileDrop.addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", () => {
-    if (fileInput.files[0]) {
-      document.getElementById("fileDropLabel").textContent = "✓ " + fileInput.files[0].name;
+    selectedQuestionFiles = Array.from(fileInput.files || []);
+    if (selectedQuestionFiles.length) {
+      const label = selectedQuestionFiles.length === 1
+        ? selectedQuestionFiles[0].name
+        : `${selectedQuestionFiles.length} image pages selected`;
+      document.getElementById("fileDropLabel").textContent = "✓ " + label;
       fileDrop.classList.add("has-file");
+    } else {
+      document.getElementById("fileDropLabel").textContent = "Click to attach a PDF/document or image pages";
+      fileDrop.classList.remove("has-file");
     }
+    renderUploadPageList();
   });
+
+  document.getElementById("uploadPageList").addEventListener("click", event => {
+    const button = event.target.closest("[data-page-move]");
+    if (!button) return;
+    const index = Number(button.dataset.pageIndex);
+    const nextIndex = index + Number(button.dataset.pageMove);
+    if (nextIndex < 0 || nextIndex >= selectedQuestionFiles.length) return;
+    [selectedQuestionFiles[index], selectedQuestionFiles[nextIndex]] =
+      [selectedQuestionFiles[nextIndex], selectedQuestionFiles[index]];
+    renderUploadPageList();
+  });
+
+  function renderUploadPageList() {
+    const list = document.getElementById("uploadPageList");
+    list.innerHTML = selectedQuestionFiles.length > 1
+      ? `<ol>${selectedQuestionFiles.map((file, index) => `
+          <li>
+            <span>Page ${index + 1}: ${escapeHtml(file.name)}</span>
+            <span class="upload-page-actions">
+              <button type="button" data-page-index="${index}" data-page-move="-1" aria-label="Move ${escapeHtml(file.name)} up" ${index === 0 ? "disabled" : ""}>Up</button>
+              <button type="button" data-page-index="${index}" data-page-move="1" aria-label="Move ${escapeHtml(file.name)} down" ${index === selectedQuestionFiles.length - 1 ? "disabled" : ""}>Down</button>
+            </span>
+          </li>
+        `).join("")}</ol>`
+      : "";
+  }
 
   let uploadInProgress = false;
   const uploadSubmitButton = document.querySelector('#uploadForm button[type="submit"]');
@@ -219,8 +255,12 @@
       showError(errorBox, "Please select level, semester, and course.");
       return;
     }
-    const file = fileInput.files[0];
-    if (!file) { showError(errorBox, "Please attach a file."); return; }
+    const files = selectedQuestionFiles;
+    if (!files.length) { showError(errorBox, "Please attach a PDF/document or at least one image page."); return; }
+    if (files.length > 1 && files.some(file => !file.type.startsWith("image/"))) {
+      showError(errorBox, "Select multiple image pages, or upload a single PDF/document.");
+      return;
+    }
 
     uploadInProgress = true;
     uploadSubmitButton.disabled = true;
@@ -232,12 +272,14 @@
         resourceType: typeCombo.getValue(),
         level, semester, courseCode,
         description: document.getElementById("description").value.trim(),
-        file
+        files
       });
 
       document.getElementById("uploadForm").reset();
-      document.getElementById("fileDropLabel").textContent = "Click to attach a PDF or image";
+      selectedQuestionFiles = [];
+      document.getElementById("fileDropLabel").textContent = "Click to attach a PDF/document or image pages";
       fileDrop.classList.remove("has-file");
+      renderUploadPageList();
       levelCombo.reset();
       semesterCombo.reset();
       courseCombo.disable("Select level and semester first");
@@ -323,19 +365,12 @@
             </div>
             <span class="badge badge-resource">${escapeHtml(r.resourceType).toUpperCase()}</span>
           </div>
-          ${r.contentType && r.contentType.startsWith("image/") && r.fileDataUrl ? `
-            <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} past question" aria-label="Open full ${escapeHtml(r.courseCode)} question" title="Click to view the full question">
-              <img src="${r.fileDataUrl}" alt="" loading="lazy">
-              <span class="question-preview-label">Paper heading · Click to view full question</span>
-            </button>
-          ` : ""}
+          ${questionPreviewMarkup(r)}
           ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
           ${r.description ? `<div class="feed-card-body">${escapeHtml(r.description)}</div>` : ""}
           <div class="feed-card-footer">
             <span>Verified upload</span>
-            ${r.fileDataUrl
-              ? `<a href="${r.fileDataUrl}" download="${escapeHtml(r.fileName)}" class="feed-card-download">Download ${escapeHtml(r.fileName)}</a>`
-              : `<span>${escapeHtml(r.fileName)}</span>`}
+            ${resourceDownloadMarkup(r, "Download")}
           </div>
         </div>
       `).join("")}</div>`;
@@ -417,12 +452,7 @@
           </div>
           ${statusBadge[r.status]}
         </div>
-        ${r.contentType && r.contentType.startsWith("image/") && r.fileDataUrl ? `
-          <button type="button" class="question-preview question-preview-trigger" data-preview-src="${r.fileDataUrl}" data-preview-alt="Full ${escapeHtml(r.courseCode)} submission" aria-label="Open full ${escapeHtml(r.courseCode)} submission" title="Click to view the full question">
-            <img src="${r.fileDataUrl}" alt="" loading="lazy">
-            <span class="question-preview-label">Paper heading · Click to view full question</span>
-          </button>
-        ` : ""}
+        ${questionPreviewMarkup(r)}
         ${r.fileAccessError ? `<div class="feed-card-body" role="alert">File unavailable: ${escapeHtml(r.fileAccessError)}</div>` : ""}
         ${r.status === "rejected" && r.rejectionReason ? `<div class="feed-card-body" style="color:#A03F22;">Reason: ${escapeHtml(r.rejectionReason)}</div>` : ""}
       </div>

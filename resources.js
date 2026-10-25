@@ -5,24 +5,34 @@ function uid() {
 }
 
 function resourceSelect() {
-  return "id,uploader_id,course_id,resource_type,description,file_name,content_type,storage_path,status,rejection_reason,created_at,reviewed_at,reviewed_by," +
+  return "id,uploader_id,course_id,resource_type,description,file_name,content_type,storage_path,page_files,status,rejection_reason,created_at,reviewed_at,reviewed_by," +
     "course:courses!resources_course_id_fkey(code,title,department_id,level,semester,department:departments!courses_department_id_fkey(name))," +
     "uploader:profiles!resources_uploader_id_fkey(full_name,matric_number,email,department:departments!profiles_department_id_fkey(name))";
 }
 
 async function mapResource(row, includeFileLink = true) {
-  let fileDataUrl = "";
+  const fileEntries = Array.isArray(row.page_files) && row.page_files.length
+    ? row.page_files
+    : [{ storage_path: row.storage_path, file_name: row.file_name, content_type: row.content_type }];
+  let pages = fileEntries.map(page => ({
+    fileName: page.file_name || row.file_name,
+    contentType: page.content_type || row.content_type || "",
+    storagePath: page.storage_path,
+    url: ""
+  }));
   let fileAccessError = "";
   if (includeFileLink) {
-    const { data, error } = await getSupabaseClient()
-      .storage.from(STORAGE_BUCKET)
-      .createSignedUrl(row.storage_path, 3600);
-    if (error) {
-      console.error(`Could not access stored question "${row.storage_path}":`, error);
-      fileAccessError = error.message || "Supabase Storage could not create a file link.";
-    } else {
-      fileDataUrl = data.signedUrl;
-    }
+    pages = await Promise.all(pages.map(async page => {
+      const { data, error } = await getSupabaseClient()
+        .storage.from(STORAGE_BUCKET)
+        .createSignedUrl(page.storagePath, 3600);
+      if (error) {
+        console.error(`Could not access stored question "${page.storagePath}":`, error);
+        fileAccessError = error.message || "Supabase Storage could not create a file link.";
+        return page;
+      }
+      return { ...page, url: data.signedUrl };
+    }));
   }
 
   return {
@@ -42,7 +52,8 @@ async function mapResource(row, includeFileLink = true) {
     description: row.description || "",
     fileName: row.file_name,
     contentType: row.content_type || "",
-    fileDataUrl,
+    pages,
+    fileDataUrl: pages[0]?.url || "",
     fileAccessError,
     storagePath: row.storage_path,
     status: row.status,
@@ -73,11 +84,38 @@ async function uploadResourceFile(file, userId) {
   if (!file) throw new Error("Choose a file to upload.");
   const safeName = file.name.replace(/[^\w.-]+/g, "_");
   const storagePath = `${userId}/${uid()}-${safeName}`;
-  const { error } = await getSupabaseClient().storage
+  const { data, error } = await getSupabaseClient().storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, file, { contentType: file.type || "application/octet-stream", upsert: false });
   if (error) throw error;
-  return storagePath;
+  return data.path;
+}
+
+async function uploadResourcePages(files, userId) {
+  if (!files.length) throw new Error("Choose at least one image page or one PDF/document.");
+  if (files.length > 1 && files.some(file => !file.type.startsWith("image/"))) {
+    throw new Error("Select multiple image pages, or upload a single PDF/document.");
+  }
+
+  const uploaded = [];
+  try {
+    for (const file of files) {
+      const storagePath = await uploadResourceFile(file, userId);
+      uploaded.push({
+        storage_path: storagePath,
+        file_name: file.name,
+        content_type: file.type || "application/octet-stream"
+      });
+    }
+  } catch (error) {
+    if (uploaded.length) {
+      const { error: cleanupError } = await getSupabaseClient().storage.from(STORAGE_BUCKET)
+        .remove(uploaded.map(page => page.storage_path));
+      if (cleanupError) console.error("Could not remove question pages after upload failed:", cleanupError);
+    }
+    throw error;
+  }
+  return uploaded;
 }
 
 async function findCourse(departmentId, level, semester, courseCode) {
@@ -98,21 +136,23 @@ async function submitResource(entry) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Please sign in again before uploading.");
   const course = await findCourse(entry.department, entry.level, entry.semester, entry.courseCode);
-  const storagePath = await uploadResourceFile(entry.file, user.id);
+  const pages = await uploadResourcePages(entry.files || [entry.file].filter(Boolean), user.id);
 
   const { error } = await client.from("resources").insert({
     uploader_id: user.id,
     course_id: course.id,
     resource_type: entry.resourceType,
     description: entry.description || null,
-    file_name: entry.file.name,
-    content_type: entry.file.type || "application/octet-stream",
-    storage_path: storagePath,
+    file_name: pages[0].file_name,
+    content_type: pages[0].content_type,
+    storage_path: pages[0].storage_path,
+    page_files: pages,
     status: "pending"
   });
 
   if (error) {
-    const { error: cleanupError } = await client.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    const { error: cleanupError } = await client.storage.from(STORAGE_BUCKET)
+      .remove(pages.map(page => page.storage_path));
     if (cleanupError) console.error("Could not remove upload after resource insert failed:", cleanupError);
     throw error;
   }
@@ -128,16 +168,17 @@ async function publishAdminResources(entries) {
     const rows = [];
     for (const entry of entries) {
       const course = await findCourse(entry.department, entry.level, entry.semester, entry.courseCode);
-      const storagePath = await uploadResourceFile(entry.file, admin.id);
-      uploadedPaths.push(storagePath);
+      const pages = await uploadResourcePages(entry.files || [entry.file].filter(Boolean), admin.id);
+      uploadedPaths.push(...pages.map(page => page.storage_path));
       rows.push({
         uploader_id: admin.id,
         course_id: course.id,
         resource_type: entry.resourceType || "Past Question",
         description: entry.description || null,
-        file_name: entry.file.name,
-        content_type: entry.file.type || "application/octet-stream",
-        storage_path: storagePath,
+        file_name: pages[0].file_name,
+        content_type: pages[0].content_type,
+        storage_path: pages[0].storage_path,
+        page_files: pages,
         status: "approved",
         reviewed_at: new Date().toISOString(),
         reviewed_by: admin.id
@@ -232,13 +273,46 @@ async function getApprovedResourcesForCourse(deptId, level, semester, courseCode
   );
 }
 
+function questionPreviewMarkup(resource) {
+  const pages = resource.pages || [];
+  if (!pages.length || pages.some(page => !page.url || !page.contentType.startsWith("image/"))) return "";
+  const courseCode = escapeHtml(resource.courseCode);
+  const previewPages = pages.map(page => ({ url: page.url, fileName: page.fileName }));
+  const pageCount = pages.length;
+  const label = pageCount > 1
+    ? `Paper preview · ${pageCount} pages · Click to browse`
+    : "Paper heading · Click to view full question";
+  return `
+    <button type="button" class="question-preview question-preview-trigger"
+      data-preview-pages="${escapeHtml(JSON.stringify(previewPages))}"
+      data-preview-alt="Full ${courseCode} question"
+      aria-label="Open full ${courseCode} question"
+      title="Click to view the full question">
+      <img src="${escapeHtml(pages[0].url)}" alt="" loading="lazy">
+      <span class="question-preview-label">${label}</span>
+    </button>
+  `;
+}
+
+function resourceDownloadMarkup(resource, label) {
+  const pages = resource.pages || [];
+  const availablePages = pages.filter(page => page.url);
+  if (!availablePages.length) return `<span>${escapeHtml(resource.fileName)}</span>`;
+  if (availablePages.length === 1) {
+    return `<a href="${escapeHtml(availablePages[0].url)}" download="${escapeHtml(availablePages[0].fileName)}" class="feed-card-download">${label} ${escapeHtml(availablePages[0].fileName)}</a>`;
+  }
+  return `<div class="feed-card-download-list">${availablePages.map((page, index) =>
+    `<a href="${escapeHtml(page.url)}" download="${escapeHtml(page.fileName)}" class="feed-card-download">${label} page ${index + 1}</a>`
+  ).join("")}</div>`;
+}
+
 async function deleteAllResources() {
   const client = getSupabaseClient();
   const batchSize = 500;
   while (true) {
     const { data, error: listError } = await client
       .from("resources")
-      .select("id,storage_path")
+      .select("id,storage_path,page_files")
       .limit(batchSize);
     if (listError) throw listError;
     if (!data.length) return;
@@ -249,8 +323,12 @@ async function deleteAllResources() {
       .in("id", data.map(resource => resource.id));
     if (deleteError) throw deleteError;
 
-    const { error: storageError } = await client.storage.from(STORAGE_BUCKET)
-      .remove(data.map(resource => resource.storage_path));
+    const storagePaths = data.flatMap(resource =>
+      Array.isArray(resource.page_files) && resource.page_files.length
+        ? resource.page_files.map(page => page.storage_path)
+        : [resource.storage_path]
+    );
+    const { error: storageError } = await client.storage.from(STORAGE_BUCKET).remove(storagePaths);
     if (storageError) throw storageError;
   }
 }
