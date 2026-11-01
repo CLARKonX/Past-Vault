@@ -68,7 +68,8 @@ document.addEventListener("click", event => {
   const dialog = getQuestionPreviewDialog();
   let pages;
   try {
-    pages = JSON.parse(trigger.dataset.previewPages || "[]");
+    const encodedPages = trigger.dataset.previewPages || "";
+    pages = JSON.parse(encodedPages ? decodeURIComponent(encodedPages) : "[]");
   } catch (error) {
     console.error("Could not read question preview pages:", error);
     return;

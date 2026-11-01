@@ -284,7 +284,7 @@ function questionPreviewMarkup(resource) {
     : "Paper heading · Click to view full question";
   return `
     <button type="button" class="question-preview question-preview-trigger"
-      data-preview-pages="${escapeHtml(JSON.stringify(previewPages))}"
+      data-preview-pages="${encodeURIComponent(JSON.stringify(previewPages))}"
       data-preview-alt="Full ${courseCode} question"
       aria-label="Open full ${courseCode} question"
       title="Click to view the full question">
